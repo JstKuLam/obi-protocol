@@ -36,10 +36,15 @@ if [ "$SOURCE_DIR" != "$TARGET_DIR" ]; then
   rm -rf "$TARGET_DIR"
   cp -R "$SOURCE_DIR" "$TARGET_DIR"
 elif [ -f "$INSTALL_MARKER" ] && [ -d "$TARGET_DIR/.git" ] && [ "${OBI_SKIP_SELF_UPDATE:-}" != "1" ]; then
+  mkdir -p "$CONFIG_DIR"
+  update_log="$CONFIG_DIR/update.log"
   echo "Updating OBI protocol..."
-  if git -C "$TARGET_DIR" pull --ff-only; then
+  if git -C "$TARGET_DIR" pull --ff-only >"$update_log" 2>&1; then
+    cat "$update_log"
+    rm -f "$update_log"
     OBI_SKIP_SELF_UPDATE=1 exec "$TARGET_DIR/scripts/install.sh" "$@"
   else
+    rm -f "$update_log"
     echo "WARN: could not update OBI protocol; continuing with local copy." >&2
   fi
 fi
