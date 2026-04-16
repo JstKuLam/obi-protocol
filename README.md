@@ -6,16 +6,12 @@ BRD, spec, user stories, changelog, decision log, runbook và sync report.
 ## Cài Nhanh
 
 ```bash
-if [ -d "$HOME/.obi/protocol/.git" ]; then
-  git -C "$HOME/.obi/protocol" pull
-else
-  rm -rf "$HOME/.obi/protocol"
-  git clone https://github.com/JstKuLam/obi-protocol "$HOME/.obi/protocol"
-fi
-bash "$HOME/.obi/protocol/scripts/install.sh"
+git clone https://github.com/JstKuLam/obi-protocol ~/.obi/protocol
+bash ~/.obi/protocol/scripts/install.sh
+obi
 ```
 
-Paste block trên là đủ. Installer sẽ mở wizard và hỏi vài câu ngắn:
+Paste 3 dòng trên là đủ. Wizard sẽ hỏi vài câu ngắn:
 
 - Bạn dùng vault Obsidian hiện có hay muốn tạo vault mới?
 - Bạn dùng Codex, Claude, Antigravity, hay nhiều tool cùng lúc?
@@ -78,14 +74,10 @@ obi uninstall --ide all
 ## English Quick Start
 
 ```bash
-if [ -d "$HOME/.obi/protocol/.git" ]; then
-  git -C "$HOME/.obi/protocol" pull
-else
-  rm -rf "$HOME/.obi/protocol"
-  git clone https://github.com/JstKuLam/obi-protocol "$HOME/.obi/protocol"
-fi
-bash "$HOME/.obi/protocol/scripts/install.sh"
+git clone https://github.com/JstKuLam/obi-protocol ~/.obi/protocol
+bash ~/.obi/protocol/scripts/install.sh
+obi
 ```
 
-Paste the block above, answer the short setup wizard, then use `/obi` or `@obi` in your AI
+Paste the 3 lines above, answer the short setup wizard, then use `/obi` or `@obi` in your AI
 coding tool to sync generated project docs into Obsidian.
