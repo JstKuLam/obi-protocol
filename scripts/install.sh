@@ -3,6 +3,8 @@ set -euo pipefail
 
 SOURCE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TARGET_DIR="${OBI_PROTOCOL_DIR:-$HOME/.obi/protocol}"
+CONFIG_DIR="$HOME/.obi"
+INSTALL_MARKER="$CONFIG_DIR/installed"
 RUN_WIZARD=0
 
 for arg in "$@"; do
@@ -33,7 +35,7 @@ mkdir -p "$(dirname "$TARGET_DIR")"
 if [ "$SOURCE_DIR" != "$TARGET_DIR" ]; then
   rm -rf "$TARGET_DIR"
   cp -R "$SOURCE_DIR" "$TARGET_DIR"
-elif [ -d "$TARGET_DIR/.git" ] && [ "${OBI_SKIP_SELF_UPDATE:-}" != "1" ]; then
+elif [ -f "$INSTALL_MARKER" ] && [ -d "$TARGET_DIR/.git" ] && [ "${OBI_SKIP_SELF_UPDATE:-}" != "1" ]; then
   echo "Updating OBI protocol..."
   if git -C "$TARGET_DIR" pull --ff-only; then
     OBI_SKIP_SELF_UPDATE=1 exec "$TARGET_DIR/scripts/install.sh" "$@"
@@ -106,6 +108,9 @@ link_into_current_path() {
 
   return 1
 }
+
+mkdir -p "$CONFIG_DIR"
+date -u +"%Y-%m-%dT%H:%M:%SZ" > "$INSTALL_MARKER"
 
 mkdir -p "$HOME/bin"
 ln -sf "$TARGET_DIR/scripts/obi" "$HOME/bin/obi"
