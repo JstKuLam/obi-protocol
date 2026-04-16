@@ -1,0 +1,351 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+PROTOCOL_DIR="${OBI_PROTOCOL_DIR:-$HOME/.obi/protocol}"
+CONFIG_DIR="$HOME/.obi"
+CONFIG_FILE="$CONFIG_DIR/config.toml"
+DATE_STAMP="$(date +%Y%m%d-%H%M%S)"
+
+usage() {
+  cat <<'USAGE'
+Usage:
+  obi setup full [--vault-name NAME] [--vault-path PATH] [--projects-root PATH] [--ide codex|claude|antigravity|all]
+  obi setup existing --vault-path PATH [--projects-root PATH] [--ide codex|claude|antigravity|all]
+  obi setup repo --repo-path PATH [--ide codex|claude|antigravity|all]
+  obi doctor
+  obi uninstall [--ide codex|claude|antigravity|all]
+
+Notes:
+  - Full setup never deletes existing Obsidian vaults.
+  - Full setup installs Obsidian only on supported local OS/package managers.
+  - Existing setup uses an existing vault and installs protocol adapters.
+USAGE
+}
+
+ensure_protocol_dir() {
+  if [ ! -d "$PROTOCOL_DIR" ]; then
+    echo "ERROR: protocol dir not found: $PROTOCOL_DIR" >&2
+    exit 1
+  fi
+}
+
+detect_os() {
+  uname -s
+}
+
+obsidian_installed() {
+  case "$(detect_os)" in
+    Darwin)
+      [ -d "/Applications/Obsidian.app" ] || [ -d "$HOME/Applications/Obsidian.app" ]
+      ;;
+    Linux)
+      command -v obsidian >/dev/null 2>&1 || flatpak list 2>/dev/null | grep -qi 'md.obsidian.Obsidian'
+      ;;
+    MINGW*|MSYS*|CYGWIN*)
+      command -v Obsidian.exe >/dev/null 2>&1
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+install_obsidian_if_missing() {
+  if obsidian_installed; then
+    echo "OK Obsidian is installed"
+    return 0
+  fi
+
+  case "$(detect_os)" in
+    Darwin)
+      if command -v brew >/dev/null 2>&1; then
+        echo "Installing Obsidian with Homebrew cask..."
+        brew install --cask obsidian
+      else
+        echo "ERROR: Obsidian is not installed and Homebrew is unavailable." >&2
+        echo "Install Obsidian manually, then rerun setup full or setup existing." >&2
+        exit 1
+      fi
+      ;;
+    Linux)
+      if command -v flatpak >/dev/null 2>&1; then
+        echo "Installing Obsidian with Flatpak..."
+        flatpak install -y flathub md.obsidian.Obsidian
+      else
+        echo "ERROR: Obsidian is not installed. Install it manually or add Flatpak support." >&2
+        exit 1
+      fi
+      ;;
+    MINGW*|MSYS*|CYGWIN*)
+      if command -v winget >/dev/null 2>&1; then
+        echo "Installing Obsidian with winget..."
+        winget install -e --id Obsidian.Obsidian
+      else
+        echo "ERROR: Obsidian is not installed and winget is unavailable." >&2
+        exit 1
+      fi
+      ;;
+    *)
+      echo "ERROR: unsupported OS for automatic Obsidian install: $(detect_os)" >&2
+      exit 1
+      ;;
+  esac
+}
+
+detect_obsidian_vaults() {
+  case "$(detect_os)" in
+    Darwin)
+      local config="$HOME/Library/Application Support/obsidian/obsidian.json"
+      [ -f "$config" ] || return 0
+      if command -v jq >/dev/null 2>&1; then
+        jq -r '.vaults[]?.path // empty' "$config" 2>/dev/null
+      else
+        sed -n 's/.*"path":"\([^"]*\)".*/\1/p' "$config"
+      fi
+      ;;
+    *)
+      return 0
+      ;;
+  esac
+}
+
+arg_value() {
+  local key="$1"
+  shift
+  while [ "$#" -gt 0 ]; do
+    if [ "$1" = "$key" ]; then
+      shift
+      [ "$#" -gt 0 ] || return 1
+      printf '%s\n' "$1"
+      return 0
+    fi
+    shift
+  done
+  return 1
+}
+
+upsert_block() {
+  local target="$1"
+  local source="$2"
+  local start="<!-- OBI_PROTOCOL_START -->"
+  local end="<!-- OBI_PROTOCOL_END -->"
+  mkdir -p "$(dirname "$target")"
+  touch "$target"
+  cp "$target" "$target.bak-$DATE_STAMP"
+  awk -v start="$start" -v end="$end" '
+    $0 == start { skip=1; next }
+    $0 == end { skip=0; next }
+    skip != 1 { print }
+  ' "$target" > "$target.tmp"
+  cat "$source" >> "$target.tmp"
+  mv "$target.tmp" "$target"
+}
+
+remove_block() {
+  local target="$1"
+  local start="<!-- OBI_PROTOCOL_START -->"
+  local end="<!-- OBI_PROTOCOL_END -->"
+  [ -f "$target" ] || return 0
+  cp "$target" "$target.bak-$DATE_STAMP"
+  awk -v start="$start" -v end="$end" '
+    $0 == start { skip=1; next }
+    $0 == end { skip=0; next }
+    skip != 1 { print }
+  ' "$target" > "$target.tmp"
+  mv "$target.tmp" "$target"
+}
+
+install_codex() {
+  mkdir -p "$HOME/.codex/skills/obi"
+  cp "$PROTOCOL_DIR/adapters/codex/SKILL.md" "$HOME/.codex/skills/obi/SKILL.md"
+  echo "Installed Codex skill: $HOME/.codex/skills/obi/SKILL.md"
+}
+
+uninstall_codex() {
+  rm -rf "$HOME/.codex/skills/obi"
+  echo "Removed Codex skill: $HOME/.codex/skills/obi"
+}
+
+install_claude() {
+  mkdir -p "$HOME/.claude/commands"
+  upsert_block "$HOME/.claude/CLAUDE.md" "$PROTOCOL_DIR/adapters/claude/CLAUDE.md"
+  cp "$PROTOCOL_DIR/adapters/claude/commands/obi.md" "$HOME/.claude/commands/obi.md"
+  cp "$PROTOCOL_DIR/adapters/claude/commands/obi-audit.md" "$HOME/.claude/commands/obi-audit.md"
+  cp "$PROTOCOL_DIR/adapters/claude/commands/obi-release.md" "$HOME/.claude/commands/obi-release.md"
+  echo "Installed Claude adapter under $HOME/.claude"
+}
+
+uninstall_claude() {
+  remove_block "$HOME/.claude/CLAUDE.md"
+  rm -f "$HOME/.claude/commands/obi.md" "$HOME/.claude/commands/obi-audit.md" "$HOME/.claude/commands/obi-release.md"
+  echo "Removed Claude OBI adapter files"
+}
+
+install_antigravity() {
+  local repo_path="$1"
+  mkdir -p "$repo_path/.agent/rules"
+  upsert_block "$repo_path/AGENTS.md" "$PROTOCOL_DIR/adapters/antigravity/AGENTS.md"
+  cp "$PROTOCOL_DIR/adapters/antigravity/rules/obi.md" "$repo_path/.agent/rules/obi.md"
+  echo "Installed Antigravity adapter under $repo_path"
+}
+
+uninstall_antigravity() {
+  local repo_path="$1"
+  remove_block "$repo_path/AGENTS.md"
+  rm -f "$repo_path/.agent/rules/obi.md"
+  echo "Removed Antigravity OBI adapter from $repo_path"
+}
+
+install_ide() {
+  local ide="$1"
+  local repo_path="${2:-}"
+  case "$ide" in
+    codex) install_codex ;;
+    claude) install_claude ;;
+    antigravity)
+      [ -n "$repo_path" ] || repo_path="$(pwd)"
+      install_antigravity "$repo_path"
+      ;;
+    all)
+      install_codex
+      install_claude
+      [ -n "$repo_path" ] && install_antigravity "$repo_path"
+      ;;
+    *) echo "ERROR: unsupported ide: $ide" >&2; exit 1 ;;
+  esac
+}
+
+write_config() {
+  local vault_path="$1"
+  local projects_root="$2"
+  mkdir -p "$CONFIG_DIR"
+  cat > "$CONFIG_FILE" <<EOF
+vault_path = "$vault_path"
+projects_root = "$projects_root"
+default_project_folder = "Projects"
+write_mode = "mcp-preferred"
+canonical_policy = "update-active-docs"
+EOF
+  echo "Wrote config: $CONFIG_FILE"
+}
+
+setup_full() {
+  ensure_protocol_dir
+  local vault_name vault_path projects_root ide
+  vault_name="$(arg_value --vault-name "$@" || true)"
+  vault_path="$(arg_value --vault-path "$@" || true)"
+  projects_root="$(arg_value --projects-root "$@" || true)"
+  ide="$(arg_value --ide "$@" || true)"
+  vault_name="${vault_name:-MyBrain}"
+  vault_path="${vault_path:-$HOME/Documents/Obsidian/$vault_name}"
+  projects_root="${projects_root:-$HOME/Antigravity}"
+  ide="${ide:-all}"
+
+  install_obsidian_if_missing
+
+  echo "Detected existing vaults:"
+  detect_obsidian_vaults | sed 's/^/  - /' || true
+
+  mkdir -p "$vault_path"
+  if [ ! -d "$vault_path/.obsidian" ]; then
+    mkdir -p "$vault_path/.obsidian"
+    printf '{\n  "legacyEditor": false\n}\n' > "$vault_path/.obsidian/app.json"
+  fi
+
+  write_config "$vault_path" "$projects_root"
+  install_ide "$ide" "$projects_root"
+  echo "Full setup complete. Vault: $vault_path"
+}
+
+setup_existing() {
+  ensure_protocol_dir
+  local vault_path projects_root ide
+  vault_path="$(arg_value --vault-path "$@" || true)"
+  projects_root="$(arg_value --projects-root "$@" || true)"
+  ide="$(arg_value --ide "$@" || true)"
+  projects_root="${projects_root:-$HOME/Antigravity}"
+  ide="${ide:-all}"
+  if [ -z "$vault_path" ]; then
+    echo "ERROR: --vault-path is required" >&2
+    exit 1
+  fi
+  if [ ! -d "$vault_path" ]; then
+    echo "ERROR: vault path does not exist: $vault_path" >&2
+    exit 1
+  fi
+  write_config "$vault_path" "$projects_root"
+  install_ide "$ide" "$projects_root"
+}
+
+setup_repo() {
+  ensure_protocol_dir
+  local repo_path ide
+  repo_path="$(arg_value --repo-path "$@" || true)"
+  ide="$(arg_value --ide "$@" || true)"
+  repo_path="${repo_path:-$(pwd)}"
+  ide="${ide:-antigravity}"
+  install_ide "$ide" "$repo_path"
+}
+
+doctor() {
+  echo "OBI doctor"
+  echo "Protocol dir: $PROTOCOL_DIR"
+  [ -d "$PROTOCOL_DIR" ] && echo "OK protocol dir exists" || echo "FAIL protocol dir missing"
+  echo "Config: $CONFIG_FILE"
+  if [ -f "$CONFIG_FILE" ]; then
+    echo "OK config exists"
+    local vault_path
+    vault_path="$(awk -F '"' '/^vault_path/ { print $2 }' "$CONFIG_FILE")"
+    echo "Vault path: $vault_path"
+    [ -d "$vault_path" ] && echo "OK vault path exists" || echo "FAIL vault path missing"
+    if [ -n "$vault_path" ] && [ -d "$vault_path" ]; then
+      local test_file="$vault_path/.obi-doctor-test.md"
+      printf '# OBI doctor\n' > "$test_file"
+      rm -f "$test_file"
+      echo "OK vault write/delete test"
+    fi
+  else
+    echo "FAIL config missing"
+  fi
+  [ -f "$HOME/.codex/skills/obi/SKILL.md" ] && echo "OK Codex skill installed" || echo "WARN Codex skill not installed"
+  [ -f "$HOME/.claude/commands/obi.md" ] && echo "OK Claude command installed" || echo "WARN Claude command not installed"
+}
+
+uninstall() {
+  local ide repo_path
+  ide="$(arg_value --ide "$@" || true)"
+  repo_path="$(arg_value --repo-path "$@" || true)"
+  ide="${ide:-all}"
+  repo_path="${repo_path:-$HOME/Antigravity}"
+  case "$ide" in
+    codex) uninstall_codex ;;
+    claude) uninstall_claude ;;
+    antigravity) uninstall_antigravity "$repo_path" ;;
+    all)
+      uninstall_codex
+      uninstall_claude
+      uninstall_antigravity "$repo_path"
+      ;;
+    *) echo "ERROR: unsupported ide: $ide" >&2; exit 1 ;;
+  esac
+}
+
+main() {
+  case "${1:-}" in
+    setup)
+      shift
+      case "${1:-}" in
+        full) shift; setup_full "$@" ;;
+        existing) shift; setup_existing "$@" ;;
+        repo) shift; setup_repo "$@" ;;
+        *) usage; exit 1 ;;
+      esac
+      ;;
+    doctor) doctor ;;
+    uninstall) shift; uninstall "$@" ;;
+    -h|--help|help|"") usage ;;
+    *) usage; exit 1 ;;
+  esac
+}
+
+main "$@"

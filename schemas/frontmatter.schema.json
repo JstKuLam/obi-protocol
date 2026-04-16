@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "OBI frontmatter",
+  "type": "object",
+  "required": ["project", "doc_type", "status", "version", "updated_at", "source"],
+  "properties": {
+    "project": { "type": "string" },
+    "doc_type": {
+      "type": "string",
+      "enum": [
+        "index",
+        "overview",
+        "requirements",
+        "user_stories",
+        "technical_spec",
+        "decision_log",
+        "changelog",
+        "runbook",
+        "operations",
+        "sync_report"
+      ]
+    },
+    "status": {
+      "type": "string",
+      "enum": ["active", "draft", "archived"]
+    },
+    "version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "updated_at": { "type": "string" },
+    "source": {
+      "type": "string",
+      "enum": ["generated_from_repo", "generated_from_notes", "manual", "mixed"]
+    },
+    "related_code_paths": {
+      "type": "array",
+      "items": { "type": "string" }
+    }
+  }
+}
+
