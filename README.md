@@ -17,6 +17,8 @@ Paste 3 dòng trên là đủ. Wizard sẽ hỏi vài câu ngắn:
 - Bạn dùng Codex, Claude, Antigravity, hay nhiều tool cùng lúc?
 - Vault/repo nằm ở đâu?
 
+Ở bước `Vault Obsidian nằm ở đâu?`, bấm `Enter` để mở popup chọn folder (macOS/Linux có GUI).
+
 OBI sẽ luôn xác nhận lại trước khi ghi file và **không bao giờ xóa vault
 Obsidian có sẵn**.
 

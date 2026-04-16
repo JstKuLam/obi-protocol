@@ -63,6 +63,83 @@ prompt() {
   printf '%s\n' "$value"
 }
 
+popup_picker_available() {
+  case "$(detect_os)" in
+    Darwin)
+      command -v osascript >/dev/null 2>&1 && [ -t 0 ]
+      ;;
+    Linux)
+      command -v zenity >/dev/null 2>&1 && [ -t 0 ]
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+pick_folder_popup() {
+  local popup_title="${1:-Chọn thư mục}"
+  local picked=""
+  case "$(detect_os)" in
+    Darwin)
+      picked="$(
+        osascript - "$popup_title" <<'APPLESCRIPT'
+on run argv
+  try
+    set popupTitle to item 1 of argv
+    set chosenFolder to choose folder with prompt popupTitle
+    return POSIX path of chosenFolder
+  on error number -128
+    return ""
+  end try
+end run
+APPLESCRIPT
+      )"
+      ;;
+    Linux)
+      picked="$(zenity --file-selection --directory --title "$popup_title" 2>/dev/null || true)"
+      ;;
+  esac
+  picked="$(printf '%s' "$picked" | tr -d '\r')"
+  printf '%s\n' "$picked"
+}
+
+prompt_folder_path() {
+  local label="$1"
+  local default_value="$2"
+  local popup_title="${3:-Chọn thư mục}"
+  local value picked
+
+  if ! popup_picker_available; then
+    prompt "$label" "$default_value"
+    return 0
+  fi
+
+  while true; do
+    printf '%s [%s] (Enter để mở popup): ' "$label" "$default_value" >&2
+    if ! IFS= read -r value; then
+      printf '\nInput closed. Exiting.\n' >&2
+      exit 1
+    fi
+
+    if [ -n "$value" ]; then
+      printf '%s\n' "$value"
+      return 0
+    fi
+
+    picked="$(pick_folder_popup "$popup_title")"
+    if [ -n "$picked" ]; then
+      printf '%s\n' "$picked"
+      return 0
+    fi
+
+    if confirm_yes "Bạn vừa đóng popup. Dùng đường dẫn mặc định?"; then
+      printf '%s\n' "$default_value"
+      return 0
+    fi
+  done
+}
+
 confirm_yes() {
   local label="$1"
   local value
@@ -546,7 +623,7 @@ wizard_existing() {
   printf 'Dùng khi bạn đã có Obsidian vault. Đây là lựa chọn đơn giản nhất.\n\n'
   local ide vault_path projects_root
   ide="$(ask_ide)"
-  vault_path="$(prompt "Vault Obsidian nằm ở đâu?" "$(default_vault_path)")"
+  vault_path="$(prompt_folder_path "Vault Obsidian nằm ở đâu?" "$(default_vault_path)" "Chọn thư mục Vault Obsidian")"
   if needs_projects_root "$ide"; then
     projects_root="$(prompt "Antigravity workspace/repo path" "$(default_projects_root)")"
   else
@@ -565,7 +642,7 @@ wizard_full() {
   local ide vault_name vault_path projects_root
   ide="$(ask_ide)"
   vault_name="$(prompt "Tên vault" "MyBrain")"
-  vault_path="$(prompt "Tạo/dùng vault ở đâu?" "$HOME/Documents/Obsidian/$vault_name")"
+  vault_path="$(prompt_folder_path "Tạo/dùng vault ở đâu?" "$HOME/Documents/Obsidian/$vault_name" "Chọn thư mục Vault Obsidian")"
   if needs_projects_root "$ide"; then
     projects_root="$(prompt "Antigravity workspace/repo path" "$(default_projects_root)")"
   else

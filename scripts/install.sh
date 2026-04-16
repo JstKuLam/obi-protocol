@@ -69,20 +69,6 @@ EOF
 
 link_into_current_path() {
   local candidate old_ifs
-  old_ifs="$IFS"
-  IFS=":"
-  for candidate in $PATH; do
-    [ -n "$candidate" ] || continue
-    if [ -d "$candidate" ] && [ -w "$candidate" ]; then
-      ln -sf "$TARGET_DIR/scripts/obi" "$candidate/obi"
-      ln -sf "$TARGET_DIR/scripts/obi-tui" "$candidate/obi-tui"
-      echo "PATH link: $candidate/obi"
-      IFS="$old_ifs"
-      return 0
-    fi
-  done
-  IFS="$old_ifs"
-
   for candidate in /opt/homebrew/bin /usr/local/bin; do
     case ":$PATH:" in
       *":$candidate:"*)
@@ -95,6 +81,23 @@ link_into_current_path() {
         ;;
     esac
   done
+
+  old_ifs="$IFS"
+  IFS=":"
+  for candidate in $PATH; do
+    [ -n "$candidate" ] || continue
+    case "$candidate" in
+      /opt/homebrew/bin|/usr/local/bin) continue ;;
+    esac
+    if [ -d "$candidate" ] && [ -w "$candidate" ]; then
+      ln -sf "$TARGET_DIR/scripts/obi" "$candidate/obi"
+      ln -sf "$TARGET_DIR/scripts/obi-tui" "$candidate/obi-tui"
+      echo "PATH link: $candidate/obi"
+      IFS="$old_ifs"
+      return 0
+    fi
+  done
+  IFS="$old_ifs"
 
   for candidate in /usr/local/bin /opt/homebrew/bin; do
     case ":$PATH:" in
