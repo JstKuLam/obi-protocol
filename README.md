@@ -1,28 +1,8 @@
 # OBI Protocol
 
-> Ngôn ngữ mặc định: Tiếng Việt. English version is below.
-
 OBI là protocol để AI coding tools tự động tạo và đồng bộ tài liệu dự án vào
 Obsidian: BRD, PRD, spec, user stories, changelog, decision log, runbook và các
 ghi chú vận hành cần thiết.
-
-Mục tiêu chính: khi user gõ `/obi`, `@obi`, `obi sync`, hoặc yêu cầu đẩy tài
-liệu sang Obsidian, AI tool sẽ tự hiểu project, tự tạo tài liệu còn thiếu, và
-cập nhật tài liệu canonical đang active thay vì tạo rác nhiều file trùng nhau.
-
-## Nên Đọc Nhanh
-
-- Mặc định đọc bằng Tiếng Việt.
-- MCP Obsidian là cách ưu tiên; nếu tool không có MCP thì fallback ghi file trực
-  tiếp vào vault.
-- Mỗi IDE/CLI cần adapter riêng, nên README tách hướng dẫn theo Codex, Claude và
-  Antigravity.
-- Không cần chia thành 3 bộ hướng dẫn Mac/Windows/Linux riêng ngay từ đầu. Lệnh
-  OBI nên giống nhau trên mọi OS; chỉ cần ghi chú OS cho phần cài Obsidian và
-  PATH.
-- `obi setup full` không bao giờ xóa vault Obsidian có sẵn.
-
-## Khi Nào Dùng OBI
 
 Dùng OBI khi bạn muốn AI tool:
 
@@ -32,6 +12,8 @@ Dùng OBI khi bạn muốn AI tool:
 - Cập nhật Obsidian vault theo một cấu trúc ổn định.
 - Giữ mỗi loại tài liệu một bản active canonical để tránh xung đột.
 - Tạo `Sync Report.md` để biết lần sync vừa rồi đã tạo/sửa gì.
+
+> `obi setup full` không bao giờ xóa vault Obsidian có sẵn.
 
 ## Setup Modes
 
