@@ -52,9 +52,15 @@ fi
 add_path_to_shell_config() {
   local shell_file="$1"
   local marker="# OBI PATH"
-  [ -n "$shell_file" ] || return 0
-  mkdir -p "$(dirname "$shell_file")"
-  touch "$shell_file"
+  [ -n "$shell_file" ] || return 1
+  mkdir -p "$(dirname "$shell_file")" || return 1
+  if [ -e "$shell_file" ]; then
+    [ -w "$shell_file" ] || return 1
+  elif [ ! -w "$(dirname "$shell_file")" ]; then
+    return 1
+  else
+    : > "$shell_file"
+  fi
   if ! grep -q "$marker" "$shell_file"; then
     cat >> "$shell_file" <<'EOF'
 
@@ -65,6 +71,39 @@ case ":$PATH:" in
 esac
 EOF
   fi
+}
+
+choose_shell_config_file() {
+  local candidate
+
+  case "${SHELL:-}" in
+    */zsh)
+      for candidate in "$HOME/.zshrc" "$HOME/.zprofile" "$HOME/.profile"; do
+        if add_path_to_shell_config "$candidate"; then
+          printf '%s\n' "$candidate"
+          return 0
+        fi
+      done
+      ;;
+    */bash)
+      for candidate in "$HOME/.bashrc" "$HOME/.bash_profile" "$HOME/.profile"; do
+        if add_path_to_shell_config "$candidate"; then
+          printf '%s\n' "$candidate"
+          return 0
+        fi
+      done
+      ;;
+    *)
+      for candidate in "$HOME/.zshrc" "$HOME/.zprofile" "$HOME/.bashrc" "$HOME/.profile"; do
+        if add_path_to_shell_config "$candidate"; then
+          printf '%s\n' "$candidate"
+          return 0
+        fi
+      done
+      ;;
+  esac
+
+  return 1
 }
 
 link_into_current_path() {
@@ -126,11 +165,14 @@ ln -sf "$TARGET_DIR/scripts/obi-tui" "$HOME/bin/obi-tui"
 chmod +x "$TARGET_DIR/scripts/obi"
 chmod +x "$TARGET_DIR/scripts/obi-tui"
 
-case "${SHELL:-}" in
-  */zsh) add_path_to_shell_config "$HOME/.zshrc" ;;
-  */bash) add_path_to_shell_config "$HOME/.bashrc" ;;
-  *) add_path_to_shell_config "$HOME/.zshrc" ;;
-esac
+if [[ ":$PATH:" == *":$HOME/bin:"* ]]; then
+  echo "PATH already includes $HOME/bin"
+elif shell_config_file="$(choose_shell_config_file)"; then
+  echo "PATH config: $shell_config_file"
+else
+  echo "WARN: could not update shell config automatically." >&2
+  echo "Add this line manually to your shell config: export PATH=\"\$HOME/bin:\$PATH\"" >&2
+fi
 
 echo "Installed OBI protocol at $TARGET_DIR"
 echo "CLI: $HOME/bin/obi"
