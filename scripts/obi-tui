@@ -1,0 +1,260 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+OBI_BIN="${OBI_BIN:-$SCRIPT_DIR/obi}"
+
+if [ ! -x "$OBI_BIN" ]; then
+  if command -v obi >/dev/null 2>&1; then
+    OBI_BIN="$(command -v obi)"
+  else
+    echo "ERROR: obi CLI not found. Run scripts/install.sh first." >&2
+    exit 1
+  fi
+fi
+
+CONFIG_FILE="$HOME/.obi/config.toml"
+
+line() {
+  printf '%s\n' "------------------------------------------------------------"
+}
+
+title() {
+  clear 2>/dev/null || true
+  printf '\nOBI Setup TUI\n'
+  line
+}
+
+pause() {
+  printf '\nPress Enter to continue... '
+  IFS= read -r _
+}
+
+read_default() {
+  local prompt="$1"
+  local default_value="$2"
+  local value
+  if [ -n "$default_value" ]; then
+    printf '%s [%s]: ' "$prompt" "$default_value" >&2
+  else
+    printf '%s: ' "$prompt" >&2
+  fi
+  if ! IFS= read -r value; then
+    printf '\nInput closed. Exiting.\n' >&2
+    exit 1
+  fi
+  if [ -z "$value" ]; then
+    value="$default_value"
+  fi
+  printf '%s\n' "$value"
+}
+
+choose() {
+  local prompt="$1"
+  shift
+  local options=("$@")
+  local choice
+
+  while true; do
+    printf '\n%s\n' "$prompt" >&2
+    local i=1
+    for option in "${options[@]}"; do
+      printf '  %s) %s\n' "$i" "$option" >&2
+      i=$((i + 1))
+    done
+    printf 'Choose [1-%s]: ' "${#options[@]}" >&2
+    if ! IFS= read -r choice; then
+      printf '\nInput closed. Exiting.\n' >&2
+      exit 1
+    fi
+    case "$choice" in
+      ''|*[!0-9]*) printf 'Invalid choice.\n' >&2 ;;
+      *)
+        if [ "$choice" -ge 1 ] && [ "$choice" -le "${#options[@]}" ]; then
+          printf '%s\n' "$choice"
+          return 0
+        fi
+        printf 'Invalid choice.\n' >&2
+        ;;
+    esac
+  done
+}
+
+confirm() {
+  local prompt="$1"
+  local answer
+  while true; do
+    printf '%s [y/N]: ' "$prompt" >&2
+    if ! IFS= read -r answer; then
+      printf '\nInput closed. Exiting.\n' >&2
+      exit 1
+    fi
+    case "$answer" in
+      y|Y|yes|YES) return 0 ;;
+      ''|n|N|no|NO) return 1 ;;
+      *) printf 'Please answer y or n.\n' >&2 ;;
+    esac
+  done
+}
+
+config_value() {
+  local key="$1"
+  [ -f "$CONFIG_FILE" ] || return 0
+  awk -F '"' -v key="$key" '$1 ~ "^" key " *= *" { print $2; exit }' "$CONFIG_FILE"
+}
+
+default_vault_path() {
+  local from_config
+  from_config="$(config_value vault_path || true)"
+  if [ -n "$from_config" ]; then
+    printf '%s\n' "$from_config"
+  else
+    printf '%s\n' "$HOME/Documents/Obsidian/MyBrain"
+  fi
+}
+
+default_projects_root() {
+  local from_config
+  from_config="$(config_value projects_root || true)"
+  if [ -n "$from_config" ]; then
+    printf '%s\n' "$from_config"
+  else
+    printf '%s\n' "$HOME/Projects"
+  fi
+}
+
+ide_from_choice() {
+  case "$1" in
+    1) printf 'codex\n' ;;
+    2) printf 'claude\n' ;;
+    3) printf 'antigravity\n' ;;
+    4) printf 'all\n' ;;
+    *) return 1 ;;
+  esac
+}
+
+choose_ide() {
+  local choice
+  choice="$(choose "Install adapter for which IDE/CLI?" \
+    "Codex" \
+    "Claude" \
+    "Antigravity" \
+    "All supported tools")"
+  ide_from_choice "$choice"
+}
+
+run_command() {
+  printf '\nCommand:\n  %q' "$OBI_BIN"
+  local arg
+  for arg in "$@"; do
+    printf ' %q' "$arg"
+  done
+  printf '\n\n'
+  "$OBI_BIN" "$@"
+}
+
+setup_full() {
+  title
+  printf 'Full setup checks Obsidian, creates or reuses a vault path, installs adapters, then runs doctor.\n'
+  printf 'It never deletes existing Obsidian vaults.\n\n'
+
+  local ide vault_name vault_path projects_root
+  ide="$(choose_ide)"
+  vault_name="$(read_default "Vault name" "MyBrain")"
+  vault_path="$(read_default "Vault path" "$HOME/Documents/Obsidian/$vault_name")"
+  projects_root="$(read_default "Projects root / Antigravity workspace path" "$(default_projects_root)")"
+
+  line
+  printf 'Mode: full\nIDE/CLI: %s\nVault name: %s\nVault path: %s\nProjects root: %s\n' \
+    "$ide" "$vault_name" "$vault_path" "$projects_root"
+  line
+  confirm "Run setup with these settings?" || return 0
+
+  run_command setup full \
+    --vault-name "$vault_name" \
+    --vault-path "$vault_path" \
+    --projects-root "$projects_root" \
+    --ide "$ide"
+  "$OBI_BIN" doctor
+}
+
+setup_existing() {
+  title
+  printf 'Existing vault setup configures OBI against a vault you already have.\n\n'
+
+  local ide vault_path projects_root
+  ide="$(choose_ide)"
+  vault_path="$(read_default "Existing vault path" "$(default_vault_path)")"
+  projects_root="$(read_default "Projects root / Antigravity workspace path" "$(default_projects_root)")"
+
+  line
+  printf 'Mode: existing\nIDE/CLI: %s\nVault path: %s\nProjects root: %s\n' \
+    "$ide" "$vault_path" "$projects_root"
+  line
+  confirm "Run setup with these settings?" || return 0
+
+  run_command setup existing \
+    --vault-path "$vault_path" \
+    --projects-root "$projects_root" \
+    --ide "$ide"
+  "$OBI_BIN" doctor
+}
+
+setup_repo() {
+  title
+  printf 'Repo setup installs project/team rules only. It does not write personal vault paths into the repo.\n\n'
+
+  local repo_path ide
+  repo_path="$(read_default "Repo path" "$PWD")"
+  ide="$(choose_ide)"
+
+  line
+  printf 'Mode: repo\nIDE/CLI: %s\nRepo path: %s\n' "$ide" "$repo_path"
+  line
+  confirm "Run repo setup with these settings?" || return 0
+
+  run_command setup repo --repo-path "$repo_path" --ide "$ide"
+}
+
+run_doctor() {
+  title
+  "$OBI_BIN" doctor
+}
+
+run_uninstall() {
+  title
+  printf 'Uninstall removes OBI-managed adapter files/blocks. It does not delete your Obsidian vault.\n\n'
+  local ide repo_path
+  ide="$(choose_ide)"
+  repo_path="$(read_default "Antigravity repo/workspace path, if relevant" "$(default_projects_root)")"
+  line
+  printf 'Uninstall IDE/CLI: %s\nRepo path: %s\n' "$ide" "$repo_path"
+  line
+  confirm "Proceed with uninstall?" || return 0
+  run_command uninstall --ide "$ide" --repo-path "$repo_path"
+}
+
+main_menu() {
+  while true; do
+    title
+    printf 'Choose the setup flow you need.\n'
+    local choice
+    choice="$(choose "Main menu" \
+      "Full install: Obsidian + vault + IDE/CLI adapter" \
+      "Existing vault: configure OBI + IDE/CLI adapter" \
+      "Repo only: install project/team adapter" \
+      "Doctor: check current setup" \
+      "Uninstall OBI adapters" \
+      "Exit")"
+    case "$choice" in
+      1) setup_full; pause ;;
+      2) setup_existing; pause ;;
+      3) setup_repo; pause ;;
+      4) run_doctor; pause ;;
+      5) run_uninstall; pause ;;
+      6) exit 0 ;;
+    esac
+  done
+}
+
+main_menu

@@ -12,8 +12,10 @@ fi
 
 mkdir -p "$HOME/bin"
 ln -sf "$TARGET_DIR/scripts/obi" "$HOME/bin/obi"
+ln -sf "$TARGET_DIR/scripts/obi-tui" "$HOME/bin/obi-tui"
 chmod +x "$TARGET_DIR/scripts/obi"
+chmod +x "$TARGET_DIR/scripts/obi-tui"
 
 echo "Installed OBI protocol at $TARGET_DIR"
 echo "CLI: $HOME/bin/obi"
-
+echo "TUI: $HOME/bin/obi-tui or obi tui"

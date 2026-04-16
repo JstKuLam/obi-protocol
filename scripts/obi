@@ -12,6 +12,7 @@ Usage:
   obi setup full [--vault-name NAME] [--vault-path PATH] [--projects-root PATH] [--ide codex|claude|antigravity|all]
   obi setup existing --vault-path PATH [--projects-root PATH] [--ide codex|claude|antigravity|all]
   obi setup repo --repo-path PATH [--ide codex|claude|antigravity|all]
+  obi tui
   obi doctor
   obi uninstall [--ide codex|claude|antigravity|all]
 
@@ -130,13 +131,16 @@ upsert_block() {
   local start="<!-- OBI_PROTOCOL_START -->"
   local end="<!-- OBI_PROTOCOL_END -->"
   mkdir -p "$(dirname "$target")"
-  touch "$target"
-  cp "$target" "$target.bak-$DATE_STAMP"
-  awk -v start="$start" -v end="$end" '
-    $0 == start { skip=1; next }
-    $0 == end { skip=0; next }
-    skip != 1 { print }
-  ' "$target" > "$target.tmp"
+  if [ -f "$target" ]; then
+    cp "$target" "$target.bak-$DATE_STAMP"
+    awk -v start="$start" -v end="$end" '
+      $0 == start { skip=1; next }
+      $0 == end { skip=0; next }
+      skip != 1 { print }
+    ' "$target" > "$target.tmp"
+  else
+    : > "$target.tmp"
+  fi
   cat "$source" >> "$target.tmp"
   mv "$target.tmp" "$target"
 }
@@ -196,6 +200,30 @@ uninstall_antigravity() {
   echo "Removed Antigravity OBI adapter from $repo_path"
 }
 
+install_codex_repo() {
+  local repo_path="$1"
+  upsert_block "$repo_path/AGENTS.md" "$PROTOCOL_DIR/adapters/codex/AGENTS.md"
+  echo "Installed Codex repo adapter: $repo_path/AGENTS.md"
+}
+
+uninstall_codex_repo() {
+  local repo_path="$1"
+  remove_block "$repo_path/AGENTS.md"
+  echo "Removed Codex OBI repo adapter from $repo_path"
+}
+
+install_claude_repo() {
+  local repo_path="$1"
+  upsert_block "$repo_path/CLAUDE.md" "$PROTOCOL_DIR/adapters/claude/CLAUDE.md"
+  echo "Installed Claude repo adapter: $repo_path/CLAUDE.md"
+}
+
+uninstall_claude_repo() {
+  local repo_path="$1"
+  remove_block "$repo_path/CLAUDE.md"
+  echo "Removed Claude OBI repo adapter from $repo_path"
+}
+
 install_ide() {
   local ide="$1"
   local repo_path="${2:-}"
@@ -210,6 +238,39 @@ install_ide() {
       install_codex
       install_claude
       [ -n "$repo_path" ] && install_antigravity "$repo_path"
+      ;;
+    *) echo "ERROR: unsupported ide: $ide" >&2; exit 1 ;;
+  esac
+}
+
+install_repo_adapter() {
+  local ide="$1"
+  local repo_path="$2"
+  mkdir -p "$repo_path"
+  case "$ide" in
+    codex) install_codex_repo "$repo_path" ;;
+    claude) install_claude_repo "$repo_path" ;;
+    antigravity) install_antigravity "$repo_path" ;;
+    all)
+      install_codex_repo "$repo_path"
+      install_claude_repo "$repo_path"
+      install_antigravity "$repo_path"
+      ;;
+    *) echo "ERROR: unsupported ide: $ide" >&2; exit 1 ;;
+  esac
+}
+
+uninstall_repo_adapter() {
+  local ide="$1"
+  local repo_path="$2"
+  case "$ide" in
+    codex) uninstall_codex_repo "$repo_path" ;;
+    claude) uninstall_claude_repo "$repo_path" ;;
+    antigravity) uninstall_antigravity "$repo_path" ;;
+    all)
+      uninstall_codex_repo "$repo_path"
+      uninstall_claude_repo "$repo_path"
+      uninstall_antigravity "$repo_path"
       ;;
     *) echo "ERROR: unsupported ide: $ide" >&2; exit 1 ;;
   esac
@@ -284,7 +345,7 @@ setup_repo() {
   ide="$(arg_value --ide "$@" || true)"
   repo_path="${repo_path:-$(pwd)}"
   ide="${ide:-antigravity}"
-  install_ide "$ide" "$repo_path"
+  install_repo_adapter "$ide" "$repo_path"
 }
 
 doctor() {
@@ -332,6 +393,13 @@ uninstall() {
 
 main() {
   case "${1:-}" in
+    tui)
+      if [ -x "$PROTOCOL_DIR/scripts/obi-tui" ]; then
+        exec "$PROTOCOL_DIR/scripts/obi-tui"
+      fi
+      echo "ERROR: TUI script not found: $PROTOCOL_DIR/scripts/obi-tui" >&2
+      exit 1
+      ;;
     setup)
       shift
       case "${1:-}" in

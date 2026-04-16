@@ -53,13 +53,39 @@ Từ checkout local:
 bash ./scripts/install.sh
 ```
 
-Sau khi cài, CLI mặc định nằm tại:
+Sau khi cài, CLI/TUI mặc định nằm tại:
 
 ```text
 ~/bin/obi
+~/bin/obi-tui
 ```
 
 Nếu shell chưa nhận `obi`, thêm `~/bin` vào PATH.
+
+## Cách Setup Khuyến Nghị: TUI
+
+User không cần nhớ các flags bên dưới. Chạy TUI và chọn từng bước:
+
+```bash
+obi tui
+```
+
+hoặc:
+
+```bash
+obi-tui
+```
+
+TUI sẽ hỏi:
+
+- Setup mode: full install, existing vault, repo only, doctor, uninstall.
+- IDE/CLI: Codex, Claude, Antigravity, hoặc all.
+- Vault path.
+- Projects root hoặc Antigravity workspace path.
+- Xác nhận lại command trước khi chạy.
+
+Các lệnh manual bên dưới chỉ dành cho automation, CI, hoặc user muốn copy/paste
+thẳng command.
 
 ## Cài Cho Codex
 
