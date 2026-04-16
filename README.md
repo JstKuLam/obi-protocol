@@ -24,7 +24,7 @@ other IDE/CLI agents with minimal per-tool adapters.
 ## Install
 
 ```bash
-git clone https://github.com/<owner>/obi-protocol ~/.obi/protocol
+git clone https://github.com/JstKuLam/obi-protocol ~/.obi/protocol
 bash ~/.obi/protocol/scripts/install.sh
 ```
 
