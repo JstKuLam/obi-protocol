@@ -18,4 +18,4 @@ chmod +x "$TARGET_DIR/scripts/obi-tui"
 
 echo "Installed OBI protocol at $TARGET_DIR"
 echo "CLI: $HOME/bin/obi"
-echo "TUI: $HOME/bin/obi-tui or obi tui"
+echo "Next: run 'obi'"

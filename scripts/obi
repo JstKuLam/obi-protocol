@@ -8,26 +8,118 @@ DATE_STAMP="$(date +%Y%m%d-%H%M%S)"
 
 usage() {
   cat <<'USAGE'
-Usage:
+OBI - Obsidian setup for AI coding tools
+
+Run:
+  obi
+
+That opens the friendly setup wizard.
+
+Advanced commands:
   obi setup full [--vault-name NAME] [--vault-path PATH] [--projects-root PATH] [--ide codex|claude|antigravity|all]
   obi setup existing --vault-path PATH [--projects-root PATH] [--ide codex|claude|antigravity|all]
   obi setup repo --repo-path PATH [--ide codex|claude|antigravity|all]
-  obi tui
   obi doctor
-  obi uninstall [--ide codex|claude|antigravity|all]
+  obi uninstall [--ide codex|claude|antigravity|all] [--repo-path PATH]
+  obi help
 
-Notes:
-  - Full setup never deletes existing Obsidian vaults.
-  - Full setup installs Obsidian only on supported local OS/package managers.
-  - Existing setup uses an existing vault and installs protocol adapters.
+OBI never deletes existing Obsidian vaults.
 USAGE
 }
 
+line() {
+  printf '%s\n' "------------------------------------------------------------"
+}
+
+screen() {
+  clear 2>/dev/null || true
+  printf '\nOBI Setup\n'
+  line
+}
+
+die() {
+  printf 'ERROR: %s\n' "$*" >&2
+  exit 1
+}
+
 ensure_protocol_dir() {
-  if [ ! -d "$PROTOCOL_DIR" ]; then
-    echo "ERROR: protocol dir not found: $PROTOCOL_DIR" >&2
+  [ -d "$PROTOCOL_DIR" ] || die "Không tìm thấy protocol dir: $PROTOCOL_DIR. Hãy chạy scripts/install.sh trước."
+}
+
+prompt() {
+  local label="$1"
+  local default_value="${2:-}"
+  local value
+  if [ -n "$default_value" ]; then
+    printf '%s [%s]: ' "$label" "$default_value" >&2
+  else
+    printf '%s: ' "$label" >&2
+  fi
+  if ! IFS= read -r value; then
+    printf '\nInput closed. Exiting.\n' >&2
     exit 1
   fi
+  [ -n "$value" ] || value="$default_value"
+  printf '%s\n' "$value"
+}
+
+confirm_yes() {
+  local label="$1"
+  local value
+  while true; do
+    printf '%s [Y/n]: ' "$label" >&2
+    if ! IFS= read -r value; then
+      printf '\nInput closed. Exiting.\n' >&2
+      exit 1
+    fi
+    case "$value" in
+      ""|y|Y|yes|YES) return 0 ;;
+      n|N|no|NO) return 1 ;;
+      *) printf 'Nhập y hoặc n.\n' >&2 ;;
+    esac
+  done
+}
+
+choose() {
+  local label="$1"
+  local default_choice="$2"
+  shift 2
+  local options=("$@")
+  local value
+
+  while true; do
+    printf '\n%s\n' "$label" >&2
+    local i=1
+    for option in "${options[@]}"; do
+      if [ "$i" -eq "$default_choice" ]; then
+        printf '  %s) %s (khuyên dùng)\n' "$i" "$option" >&2
+      else
+        printf '  %s) %s\n' "$i" "$option" >&2
+      fi
+      i=$((i + 1))
+    done
+    printf 'Chọn [%s]: ' "$default_choice" >&2
+    if ! IFS= read -r value; then
+      printf '\nInput closed. Exiting.\n' >&2
+      exit 1
+    fi
+    [ -n "$value" ] || value="$default_choice"
+    case "$value" in
+      ''|*[!0-9]*) printf 'Lựa chọn chưa hợp lệ.\n' >&2 ;;
+      *)
+        if [ "$value" -ge 1 ] && [ "$value" -le "${#options[@]}" ]; then
+          printf '%s\n' "$value"
+          return 0
+        fi
+        printf 'Lựa chọn chưa hợp lệ.\n' >&2
+        ;;
+    esac
+  done
+}
+
+pause() {
+  printf '\nNhấn Enter để tiếp tục... ' >&2
+  IFS= read -r _ || true
 }
 
 detect_os() {
@@ -53,42 +145,37 @@ obsidian_installed() {
 
 install_obsidian_if_missing() {
   if obsidian_installed; then
-    echo "OK Obsidian is installed"
+    printf 'OK Obsidian đã được cài.\n'
     return 0
   fi
 
   case "$(detect_os)" in
     Darwin)
       if command -v brew >/dev/null 2>&1; then
-        echo "Installing Obsidian with Homebrew cask..."
+        printf 'Đang cài Obsidian bằng Homebrew...\n'
         brew install --cask obsidian
       else
-        echo "ERROR: Obsidian is not installed and Homebrew is unavailable." >&2
-        echo "Install Obsidian manually, then rerun setup full or setup existing." >&2
-        exit 1
+        die "Máy chưa có Obsidian và chưa có Homebrew. Cài Obsidian thủ công rồi chạy lại: obi"
       fi
       ;;
     Linux)
       if command -v flatpak >/dev/null 2>&1; then
-        echo "Installing Obsidian with Flatpak..."
+        printf 'Đang cài Obsidian bằng Flatpak...\n'
         flatpak install -y flathub md.obsidian.Obsidian
       else
-        echo "ERROR: Obsidian is not installed. Install it manually or add Flatpak support." >&2
-        exit 1
+        die "Máy chưa có Obsidian. Cài Obsidian thủ công rồi chạy lại: obi"
       fi
       ;;
     MINGW*|MSYS*|CYGWIN*)
       if command -v winget >/dev/null 2>&1; then
-        echo "Installing Obsidian with winget..."
+        printf 'Đang cài Obsidian bằng winget...\n'
         winget install -e --id Obsidian.Obsidian
       else
-        echo "ERROR: Obsidian is not installed and winget is unavailable." >&2
-        exit 1
+        die "Máy chưa có Obsidian và chưa có winget. Cài Obsidian thủ công rồi chạy lại: obi"
       fi
       ;;
     *)
-      echo "ERROR: unsupported OS for automatic Obsidian install: $(detect_os)" >&2
-      exit 1
+      die "Không hỗ trợ auto-install Obsidian cho OS này. Cài Obsidian thủ công rồi chạy lại: obi"
       ;;
   esac
 }
@@ -108,6 +195,41 @@ detect_obsidian_vaults() {
       return 0
       ;;
   esac
+}
+
+config_value() {
+  local key="$1"
+  [ -f "$CONFIG_FILE" ] || return 0
+  awk -F '"' -v key="$key" '$1 ~ "^" key " *= *" { print $2; exit }' "$CONFIG_FILE"
+}
+
+default_vault_path() {
+  local configured detected
+  configured="$(config_value vault_path || true)"
+  if [ -n "$configured" ] && [ -d "$configured" ]; then
+    printf '%s\n' "$configured"
+    return 0
+  fi
+  detected="$(detect_obsidian_vaults | head -n 1 || true)"
+  if [ -n "$detected" ]; then
+    printf '%s\n' "$detected"
+    return 0
+  fi
+  printf '%s\n' "$HOME/Documents/Obsidian/MyBrain"
+}
+
+default_projects_root() {
+  local configured
+  configured="$(config_value projects_root || true)"
+  if [ -n "$configured" ]; then
+    printf '%s\n' "$configured"
+    return 0
+  fi
+  if [ -d "$HOME/Antigravity" ]; then
+    printf '%s\n' "$HOME/Antigravity"
+  else
+    printf '%s\n' "$HOME/Projects"
+  fi
 }
 
 arg_value() {
@@ -132,12 +254,14 @@ upsert_block() {
   local end="<!-- OBI_PROTOCOL_END -->"
   mkdir -p "$(dirname "$target")"
   if [ -f "$target" ]; then
-    cp "$target" "$target.bak-$DATE_STAMP"
     awk -v start="$start" -v end="$end" '
       $0 == start { skip=1; next }
       $0 == end { skip=0; next }
       skip != 1 { print }
     ' "$target" > "$target.tmp"
+    if grep -q '[^[:space:]]' "$target.tmp"; then
+      cp "$target" "$target.bak-$DATE_STAMP"
+    fi
   else
     : > "$target.tmp"
   fi
@@ -162,12 +286,7 @@ remove_block() {
 install_codex() {
   mkdir -p "$HOME/.codex/skills/obi"
   cp "$PROTOCOL_DIR/adapters/codex/SKILL.md" "$HOME/.codex/skills/obi/SKILL.md"
-  echo "Installed Codex skill: $HOME/.codex/skills/obi/SKILL.md"
-}
-
-uninstall_codex() {
-  rm -rf "$HOME/.codex/skills/obi"
-  echo "Removed Codex skill: $HOME/.codex/skills/obi"
+  printf 'OK Codex: %s\n' "$HOME/.codex/skills/obi/SKILL.md"
 }
 
 install_claude() {
@@ -176,13 +295,7 @@ install_claude() {
   cp "$PROTOCOL_DIR/adapters/claude/commands/obi.md" "$HOME/.claude/commands/obi.md"
   cp "$PROTOCOL_DIR/adapters/claude/commands/obi-audit.md" "$HOME/.claude/commands/obi-audit.md"
   cp "$PROTOCOL_DIR/adapters/claude/commands/obi-release.md" "$HOME/.claude/commands/obi-release.md"
-  echo "Installed Claude adapter under $HOME/.claude"
-}
-
-uninstall_claude() {
-  remove_block "$HOME/.claude/CLAUDE.md"
-  rm -f "$HOME/.claude/commands/obi.md" "$HOME/.claude/commands/obi-audit.md" "$HOME/.claude/commands/obi-release.md"
-  echo "Removed Claude OBI adapter files"
+  printf 'OK Claude: %s\n' "$HOME/.claude/commands/obi.md"
 }
 
 install_antigravity() {
@@ -190,56 +303,56 @@ install_antigravity() {
   mkdir -p "$repo_path/.agent/rules"
   upsert_block "$repo_path/AGENTS.md" "$PROTOCOL_DIR/adapters/antigravity/AGENTS.md"
   cp "$PROTOCOL_DIR/adapters/antigravity/rules/obi.md" "$repo_path/.agent/rules/obi.md"
-  echo "Installed Antigravity adapter under $repo_path"
+  printf 'OK Antigravity: %s\n' "$repo_path/.agent/rules/obi.md"
+}
+
+install_codex_repo() {
+  local repo_path="$1"
+  upsert_block "$repo_path/AGENTS.md" "$PROTOCOL_DIR/adapters/codex/AGENTS.md"
+  printf 'OK Codex repo rule: %s\n' "$repo_path/AGENTS.md"
+}
+
+install_claude_repo() {
+  local repo_path="$1"
+  upsert_block "$repo_path/CLAUDE.md" "$PROTOCOL_DIR/adapters/claude/CLAUDE.md"
+  printf 'OK Claude repo rule: %s\n' "$repo_path/CLAUDE.md"
+}
+
+uninstall_codex() {
+  rm -rf "$HOME/.codex/skills/obi"
+  printf 'Removed Codex adapter.\n'
+}
+
+uninstall_claude() {
+  remove_block "$HOME/.claude/CLAUDE.md"
+  rm -f "$HOME/.claude/commands/obi.md" "$HOME/.claude/commands/obi-audit.md" "$HOME/.claude/commands/obi-release.md"
+  printf 'Removed Claude adapter.\n'
 }
 
 uninstall_antigravity() {
   local repo_path="$1"
   remove_block "$repo_path/AGENTS.md"
   rm -f "$repo_path/.agent/rules/obi.md"
-  echo "Removed Antigravity OBI adapter from $repo_path"
-}
-
-install_codex_repo() {
-  local repo_path="$1"
-  upsert_block "$repo_path/AGENTS.md" "$PROTOCOL_DIR/adapters/codex/AGENTS.md"
-  echo "Installed Codex repo adapter: $repo_path/AGENTS.md"
-}
-
-uninstall_codex_repo() {
-  local repo_path="$1"
-  remove_block "$repo_path/AGENTS.md"
-  echo "Removed Codex OBI repo adapter from $repo_path"
-}
-
-install_claude_repo() {
-  local repo_path="$1"
-  upsert_block "$repo_path/CLAUDE.md" "$PROTOCOL_DIR/adapters/claude/CLAUDE.md"
-  echo "Installed Claude repo adapter: $repo_path/CLAUDE.md"
-}
-
-uninstall_claude_repo() {
-  local repo_path="$1"
-  remove_block "$repo_path/CLAUDE.md"
-  echo "Removed Claude OBI repo adapter from $repo_path"
+  printf 'Removed Antigravity adapter from %s.\n' "$repo_path"
 }
 
 install_ide() {
   local ide="$1"
-  local repo_path="${2:-}"
+  local projects_root="${2:-}"
   case "$ide" in
     codex) install_codex ;;
     claude) install_claude ;;
-    antigravity)
-      [ -n "$repo_path" ] || repo_path="$(pwd)"
-      install_antigravity "$repo_path"
+    antigravity) install_antigravity "${projects_root:-$(pwd)}" ;;
+    codex-claude)
+      install_codex
+      install_claude
       ;;
     all)
       install_codex
       install_claude
-      [ -n "$repo_path" ] && install_antigravity "$repo_path"
+      install_antigravity "${projects_root:-$(pwd)}"
       ;;
-    *) echo "ERROR: unsupported ide: $ide" >&2; exit 1 ;;
+    *) die "IDE không hỗ trợ: $ide" ;;
   esac
 }
 
@@ -251,28 +364,16 @@ install_repo_adapter() {
     codex) install_codex_repo "$repo_path" ;;
     claude) install_claude_repo "$repo_path" ;;
     antigravity) install_antigravity "$repo_path" ;;
+    codex-claude)
+      install_codex_repo "$repo_path"
+      install_claude_repo "$repo_path"
+      ;;
     all)
       install_codex_repo "$repo_path"
       install_claude_repo "$repo_path"
       install_antigravity "$repo_path"
       ;;
-    *) echo "ERROR: unsupported ide: $ide" >&2; exit 1 ;;
-  esac
-}
-
-uninstall_repo_adapter() {
-  local ide="$1"
-  local repo_path="$2"
-  case "$ide" in
-    codex) uninstall_codex_repo "$repo_path" ;;
-    claude) uninstall_claude_repo "$repo_path" ;;
-    antigravity) uninstall_antigravity "$repo_path" ;;
-    all)
-      uninstall_codex_repo "$repo_path"
-      uninstall_claude_repo "$repo_path"
-      uninstall_antigravity "$repo_path"
-      ;;
-    *) echo "ERROR: unsupported ide: $ide" >&2; exit 1 ;;
+    *) die "IDE không hỗ trợ: $ide" ;;
   esac
 }
 
@@ -287,7 +388,44 @@ default_project_folder = "Projects"
 write_mode = "mcp-preferred"
 canonical_policy = "update-active-docs"
 EOF
-  echo "Wrote config: $CONFIG_FILE"
+  printf 'OK Config: %s\n' "$CONFIG_FILE"
+}
+
+ensure_vault_shape() {
+  local vault_path="$1"
+  mkdir -p "$vault_path/.obsidian"
+  if [ ! -f "$vault_path/.obsidian/app.json" ]; then
+    printf '{\n  "legacyEditor": false\n}\n' > "$vault_path/.obsidian/app.json"
+  fi
+}
+
+ide_from_choice() {
+  case "$1" in
+    1) printf 'codex\n' ;;
+    2) printf 'claude\n' ;;
+    3) printf 'codex-claude\n' ;;
+    4) printf 'antigravity\n' ;;
+    5) printf 'all\n' ;;
+    *) die "Lựa chọn IDE không hợp lệ" ;;
+  esac
+}
+
+ask_ide() {
+  local choice
+  choice="$(choose "Bạn dùng AI tool nào?" 3 \
+    "Codex" \
+    "Claude" \
+    "Codex + Claude" \
+    "Antigravity" \
+    "Tất cả")"
+  ide_from_choice "$choice"
+}
+
+needs_projects_root() {
+  case "$1" in
+    antigravity|all) return 0 ;;
+    *) return 1 ;;
+  esac
 }
 
 setup_full() {
@@ -299,23 +437,14 @@ setup_full() {
   ide="$(arg_value --ide "$@" || true)"
   vault_name="${vault_name:-MyBrain}"
   vault_path="${vault_path:-$HOME/Documents/Obsidian/$vault_name}"
-  projects_root="${projects_root:-$HOME/Antigravity}"
-  ide="${ide:-all}"
+  projects_root="${projects_root:-$(default_projects_root)}"
+  ide="${ide:-codex-claude}"
 
   install_obsidian_if_missing
-
-  echo "Detected existing vaults:"
-  detect_obsidian_vaults | sed 's/^/  - /' || true
-
-  mkdir -p "$vault_path"
-  if [ ! -d "$vault_path/.obsidian" ]; then
-    mkdir -p "$vault_path/.obsidian"
-    printf '{\n  "legacyEditor": false\n}\n' > "$vault_path/.obsidian/app.json"
-  fi
-
+  ensure_vault_shape "$vault_path"
   write_config "$vault_path" "$projects_root"
   install_ide "$ide" "$projects_root"
-  echo "Full setup complete. Vault: $vault_path"
+  printf '\nXong. Vault: %s\n' "$vault_path"
 }
 
 setup_existing() {
@@ -324,18 +453,14 @@ setup_existing() {
   vault_path="$(arg_value --vault-path "$@" || true)"
   projects_root="$(arg_value --projects-root "$@" || true)"
   ide="$(arg_value --ide "$@" || true)"
-  projects_root="${projects_root:-$HOME/Antigravity}"
-  ide="${ide:-all}"
-  if [ -z "$vault_path" ]; then
-    echo "ERROR: --vault-path is required" >&2
-    exit 1
-  fi
-  if [ ! -d "$vault_path" ]; then
-    echo "ERROR: vault path does not exist: $vault_path" >&2
-    exit 1
-  fi
+  projects_root="${projects_root:-$(default_projects_root)}"
+  ide="${ide:-codex-claude}"
+  [ -n "$vault_path" ] || die "--vault-path là bắt buộc"
+  [ -d "$vault_path" ] || die "Vault path không tồn tại: $vault_path"
+
   write_config "$vault_path" "$projects_root"
   install_ide "$ide" "$projects_root"
+  printf '\nXong. Vault: %s\n' "$vault_path"
 }
 
 setup_repo() {
@@ -344,32 +469,36 @@ setup_repo() {
   repo_path="$(arg_value --repo-path "$@" || true)"
   ide="$(arg_value --ide "$@" || true)"
   repo_path="${repo_path:-$(pwd)}"
-  ide="${ide:-antigravity}"
+  ide="${ide:-all}"
   install_repo_adapter "$ide" "$repo_path"
 }
 
 doctor() {
-  echo "OBI doctor"
-  echo "Protocol dir: $PROTOCOL_DIR"
-  [ -d "$PROTOCOL_DIR" ] && echo "OK protocol dir exists" || echo "FAIL protocol dir missing"
-  echo "Config: $CONFIG_FILE"
+  printf 'OBI doctor\n'
+  line
+  printf 'Protocol: %s\n' "$PROTOCOL_DIR"
+  [ -d "$PROTOCOL_DIR" ] && printf 'OK protocol tồn tại\n' || printf 'FAIL protocol chưa tồn tại\n'
+
+  printf 'Config: %s\n' "$CONFIG_FILE"
   if [ -f "$CONFIG_FILE" ]; then
-    echo "OK config exists"
+    printf 'OK config tồn tại\n'
     local vault_path
-    vault_path="$(awk -F '"' '/^vault_path/ { print $2 }' "$CONFIG_FILE")"
-    echo "Vault path: $vault_path"
-    [ -d "$vault_path" ] && echo "OK vault path exists" || echo "FAIL vault path missing"
+    vault_path="$(config_value vault_path || true)"
+    printf 'Vault: %s\n' "${vault_path:-"(chưa có)"}"
     if [ -n "$vault_path" ] && [ -d "$vault_path" ]; then
       local test_file="$vault_path/.obi-doctor-test.md"
       printf '# OBI doctor\n' > "$test_file"
       rm -f "$test_file"
-      echo "OK vault write/delete test"
+      printf 'OK vault ghi/xóa được\n'
+    else
+      printf 'FAIL vault path không tồn tại\n'
     fi
   else
-    echo "FAIL config missing"
+    printf 'WARN chưa có config. Chạy: obi\n'
   fi
-  [ -f "$HOME/.codex/skills/obi/SKILL.md" ] && echo "OK Codex skill installed" || echo "WARN Codex skill not installed"
-  [ -f "$HOME/.claude/commands/obi.md" ] && echo "OK Claude command installed" || echo "WARN Claude command not installed"
+
+  [ -f "$HOME/.codex/skills/obi/SKILL.md" ] && printf 'OK Codex adapter\n' || printf 'WARN Codex adapter chưa có\n'
+  [ -f "$HOME/.claude/commands/obi.md" ] && printf 'OK Claude adapter\n' || printf 'WARN Claude adapter chưa có\n'
 }
 
 uninstall() {
@@ -377,29 +506,133 @@ uninstall() {
   ide="$(arg_value --ide "$@" || true)"
   repo_path="$(arg_value --repo-path "$@" || true)"
   ide="${ide:-all}"
-  repo_path="${repo_path:-$HOME/Antigravity}"
+  repo_path="${repo_path:-$(default_projects_root)}"
   case "$ide" in
     codex) uninstall_codex ;;
     claude) uninstall_claude ;;
     antigravity) uninstall_antigravity "$repo_path" ;;
+    codex-claude)
+      uninstall_codex
+      uninstall_claude
+      ;;
     all)
       uninstall_codex
       uninstall_claude
       uninstall_antigravity "$repo_path"
       ;;
-    *) echo "ERROR: unsupported ide: $ide" >&2; exit 1 ;;
+    *) die "IDE không hỗ trợ: $ide" ;;
   esac
+}
+
+wizard_summary() {
+  local mode="$1"
+  local ide="$2"
+  local vault_path="${3:-}"
+  local projects_root="${4:-}"
+  local repo_path="${5:-}"
+  line >&2
+  printf 'OBI sẽ làm:\n' >&2
+  printf -- '- Kiểu setup: %s\n' "$mode" >&2
+  printf -- '- AI tool: %s\n' "$ide" >&2
+  [ -z "$vault_path" ] || printf -- '- Vault: %s\n' "$vault_path" >&2
+  [ -z "$projects_root" ] || printf -- '- Projects/Antigravity path: %s\n' "$projects_root" >&2
+  [ -z "$repo_path" ] || printf -- '- Repo: %s\n' "$repo_path" >&2
+  printf -- '- Không xóa vault Obsidian có sẵn\n' >&2
+  line >&2
+}
+
+wizard_existing() {
+  screen
+  printf 'Dùng khi bạn đã có Obsidian vault. Đây là lựa chọn đơn giản nhất.\n\n'
+  local ide vault_path projects_root
+  ide="$(ask_ide)"
+  vault_path="$(prompt "Vault Obsidian nằm ở đâu?" "$(default_vault_path)")"
+  if needs_projects_root "$ide"; then
+    projects_root="$(prompt "Antigravity workspace/repo path" "$(default_projects_root)")"
+  else
+    projects_root="$(default_projects_root)"
+  fi
+  wizard_summary "existing vault" "$ide" "$vault_path" "$projects_root" ""
+  confirm_yes "Bắt đầu setup?" || return 0
+  setup_existing --vault-path "$vault_path" --projects-root "$projects_root" --ide "$ide"
+  printf '\nKiểm tra nhanh:\n'
+  doctor
+}
+
+wizard_full() {
+  screen
+  printf 'Dùng khi setup máy mới hoặc muốn tạo vault mới.\n\n'
+  local ide vault_name vault_path projects_root
+  ide="$(ask_ide)"
+  vault_name="$(prompt "Tên vault" "MyBrain")"
+  vault_path="$(prompt "Tạo/dùng vault ở đâu?" "$HOME/Documents/Obsidian/$vault_name")"
+  if needs_projects_root "$ide"; then
+    projects_root="$(prompt "Antigravity workspace/repo path" "$(default_projects_root)")"
+  else
+    projects_root="$(default_projects_root)"
+  fi
+  wizard_summary "full install" "$ide" "$vault_path" "$projects_root" ""
+  confirm_yes "Bắt đầu setup?" || return 0
+  setup_full --vault-name "$vault_name" --vault-path "$vault_path" --projects-root "$projects_root" --ide "$ide"
+  printf '\nKiểm tra nhanh:\n'
+  doctor
+}
+
+wizard_repo() {
+  screen
+  printf 'Dùng khi chỉ muốn thêm OBI rules vào repo hiện tại.\n'
+  printf 'Luồng này không ghi vault path cá nhân vào repo.\n\n'
+  local ide repo_path
+  ide="$(ask_ide)"
+  repo_path="$(prompt "Repo path" "$PWD")"
+  wizard_summary "repo only" "$ide" "" "" "$repo_path"
+  confirm_yes "Bắt đầu setup repo?" || return 0
+  setup_repo --repo-path "$repo_path" --ide "$ide"
+}
+
+wizard_uninstall() {
+  screen
+  printf 'Gỡ adapter OBI. Lệnh này không xóa vault Obsidian.\n\n'
+  local ide repo_path
+  ide="$(ask_ide)"
+  if needs_projects_root "$ide"; then
+    repo_path="$(prompt "Antigravity repo/workspace path" "$(default_projects_root)")"
+  else
+    repo_path="$(default_projects_root)"
+  fi
+  wizard_summary "uninstall" "$ide" "" "" "$repo_path"
+  confirm_yes "Gỡ OBI adapters?" || return 0
+  uninstall --ide "$ide" --repo-path "$repo_path"
+}
+
+wizard() {
+  ensure_protocol_dir
+  while true; do
+    screen
+    printf 'Mình sẽ hỏi vài câu ngắn để setup Obsidian cho AI tools.\n'
+    printf 'Bạn có thể bấm Enter để dùng lựa chọn khuyên dùng.\n\n'
+    local choice
+    choice="$(choose "Bạn muốn làm gì?" 1 \
+      "Dùng vault Obsidian hiện có" \
+      "Tạo vault mới / setup máy mới" \
+      "Chỉ thêm OBI rules vào repo này" \
+      "Kiểm tra setup" \
+      "Gỡ OBI" \
+      "Thoát")"
+    case "$choice" in
+      1) wizard_existing; pause ;;
+      2) wizard_full; pause ;;
+      3) wizard_repo; pause ;;
+      4) screen; doctor; pause ;;
+      5) wizard_uninstall; pause ;;
+      6) exit 0 ;;
+    esac
+  done
 }
 
 main() {
   case "${1:-}" in
-    tui)
-      if [ -x "$PROTOCOL_DIR/scripts/obi-tui" ]; then
-        exec "$PROTOCOL_DIR/scripts/obi-tui"
-      fi
-      echo "ERROR: TUI script not found: $PROTOCOL_DIR/scripts/obi-tui" >&2
-      exit 1
-      ;;
+    ""|wizard|tui) wizard ;;
     setup)
       shift
       case "${1:-}" in
@@ -411,7 +644,7 @@ main() {
       ;;
     doctor) doctor ;;
     uninstall) shift; uninstall "$@" ;;
-    -h|--help|help|"") usage ;;
+    -h|--help|help) usage ;;
     *) usage; exit 1 ;;
   esac
 }
